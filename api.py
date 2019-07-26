@@ -40,24 +40,11 @@ GENDERS = {
 empty_values = ('', [], (), None, {})
 
 
-class MetaClassField():
-    def __get__(self, instance, owner):
-        return instance.__dict__[self.name]
-
-    def __set__(self, instance, value):
-        print('zdarova')
-        if not isinstance(value, str):
-            print('ne')
-            return
-        instance.__dict__[self.name] = value
-
-    def __set_name__(self, owner, name):
-        self.name = name
-
-
-# class Field(abc.ABC):
-class Field():
+class Field(abc.ABC):
     """A descriptor that forbids negative values"""
+
+    # empty_values = ('', [], (), None)
+
     def __init__(self, required=False, nullable=False):
         self.required = required
         self.nullable = nullable
@@ -76,7 +63,7 @@ class Field():
 
 class CharField(Field):
     def value_validate(self, value):
-        print('charfield', value)
+        # print('charfield', value)
         super().validate(value)
         if isinstance(value, str) is False:
             raise Exception('CharField must be str type')
@@ -92,25 +79,13 @@ class ArgumentsField(Field):
 
 
 class EmailField(CharField):
-
-    def __set__(self, instance, value):
-        print('hereEmailEfield')
+    def value_validate(self, value):
+        super().validate(value)
         if isinstance(value, str) is False:
             raise Exception('EmailField must be str type')
         if value.count('@') != 1:
             raise Exception('wrong email address')
-        instance.__dict__[self.name] = value
-
-    def __set_name__(self, owner, name):
-        self.name = name
-
-    # def value_validate(self, value):
-    #     super().validate(value)
-    #     if isinstance(value, str) is False:
-    #         raise Exception('EmailField must be str type')
-    #     if value.count('@') != 1:
-    #         raise Exception('wrong email address')
-    #     return value
+        return value
 
 
 class PhoneField(Field):
@@ -195,22 +170,10 @@ def validate_class_fields(class_object):
     object_dict = class_object.__dict__
     object_class_dict = class_object.__class__.__dict__
     for cur_field in object_dict:
-
-        if cur_field == 'email':
-            print(cur_field)
-            # print(class_object.__class__().__dict__)
-            print(class_object.__class__().email)
-            print(object_dict[cur_field])
-
-            print(class_object.__class__().__dict__)
-            class_object.__class__().email = object_dict[cur_field]
-            print(class_object.__class__().__dict__)
-
         if cur_field == 'errors': pass
         if cur_field not in empty_values:
             try:
-                pass
-                # object_class_dict[cur_field].value_validate(object_dict[cur_field])
+                object_class_dict[cur_field].value_validate(object_dict[cur_field])
             except Exception as ex:
                 errors[cur_field] = "Wasn't validate"
     return errors
