@@ -1,4 +1,5 @@
 import abc
+import collections
 import json
 import datetime
 import logging
@@ -39,11 +40,24 @@ GENDERS = {
 empty_values = ('', [], (), None, {})
 
 
-class Field(abc.ABC):
+class MetaClassField():
+    def __get__(self, instance, owner):
+        return instance.__dict__[self.name]
+
+    def __set__(self, instance, value):
+        print('zdarova')
+        if not isinstance(value, str):
+            print('ne')
+            return
+        instance.__dict__[self.name] = value
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+
+# class Field(abc.ABC):
+class Field():
     """A descriptor that forbids negative values"""
-
-    # empty_values = ('', [], (), None)
-
     def __init__(self, required=False, nullable=False):
         self.required = required
         self.nullable = nullable
@@ -62,6 +76,7 @@ class Field(abc.ABC):
 
 class CharField(Field):
     def value_validate(self, value):
+        print('charfield', value)
         super().validate(value)
         if isinstance(value, str) is False:
             raise Exception('CharField must be str type')
@@ -77,13 +92,25 @@ class ArgumentsField(Field):
 
 
 class EmailField(CharField):
-    def value_validate(self, value):
-        super().validate(value)
+
+    def __set__(self, instance, value):
+        print('hereEmailEfield')
         if isinstance(value, str) is False:
             raise Exception('EmailField must be str type')
         if value.count('@') != 1:
             raise Exception('wrong email address')
-        return value
+        instance.__dict__[self.name] = value
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    # def value_validate(self, value):
+    #     super().validate(value)
+    #     if isinstance(value, str) is False:
+    #         raise Exception('EmailField must be str type')
+    #     if value.count('@') != 1:
+    #         raise Exception('wrong email address')
+    #     return value
 
 
 class PhoneField(Field):
@@ -138,30 +165,63 @@ class ClientIDsField(Field):
             raise Exception('Wrong type of client ids')
         return value
 
+class DictAttrMetaclass(type):
+    """ Метаклса для добавления всех полей класса, в словарь only_attr"""
+    def __new__(cls, clsname, bases, dct):
+        only_attr = {}
+        for name, val in dct.items():
+            if not name.startswith('__'):
+                # print(name, val)
+                only_attr[name] = val
 
-class Request(abc.ABC):
-    def __init__(self):
-        self.erros = []
+        dct['only_attr'] = only_attr
+        return type.__new__(cls, clsname, bases, dct)
 
-    @abc.abstractmethod
+
+
+class Request(metaclass=DictAttrMetaclass):
+
+    def __init__(self, **kwargs):
+        for _ in kwargs:
+            self.__dict__[_] = kwargs[_]
+
+    @abc.abstractmethod ##? Можно ли использовать без прямого наследования от abc.ABC
     def values_validate(self):
         pass
+
+
+def validate_class_fields(class_object):
+    errors = {} ## Или в Request хранить ?
+    object_dict = class_object.__dict__
+    object_class_dict = class_object.__class__.__dict__
+    for cur_field in object_dict:
+
+        if cur_field == 'email':
+            print(cur_field)
+            # print(class_object.__class__().__dict__)
+            print(class_object.__class__().email)
+            print(object_dict[cur_field])
+
+            print(class_object.__class__().__dict__)
+            class_object.__class__().email = object_dict[cur_field]
+            print(class_object.__class__().__dict__)
+
+        if cur_field == 'errors': pass
+        if cur_field not in empty_values:
+            try:
+                pass
+                # object_class_dict[cur_field].value_validate(object_dict[cur_field])
+            except Exception as ex:
+                errors[cur_field] = "Wasn't validate"
+    return errors
 
 class ClientsInterestsRequest(Request):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
     def values_validate(self):
-        try:
-            ClientIDsField().validate(self.client_ids)
-        except:
-            self.erros.append('client_ids')
-
-        try:
-            DateField().validate(self.date)
-        except:
-            self.erros.append('date')
-
+        errors = validate_class_fields(self)
+        return errors
 
 class OnlineScoreRequest(Request):
     first_name = CharField(required=False, nullable=True)
@@ -172,42 +232,12 @@ class OnlineScoreRequest(Request):
     gender = GenderField(required=False, nullable=True)
 
     def values_validate(self):
-        if self.first_name not in empty_values:
-            try:
-                CharField().value_validate(self.first_name)
-            except:
-                self.erros.append('first_name')
-        if self.last_name not in empty_values:
-            try:
-                CharField().value_validate(self.last_name)
-            except:
-                self.erros.append('last_name')
-        if self.email not in empty_values:
-            try:
-                EmailField().value_validate(self.email)
-            except:
-                self.erros.append('email')
-        if self.phone not in empty_values:
-            try:
-                PhoneField().value_validate(self.phone)
-            except:
-                self.erros.append('phone')
-        if self.birthday not in empty_values:
-            try:
-                BirthDayField().value_validate(self.birthday)
-            except:
-                self.erros.append('field_validate')
-        if self.gender not in empty_values:
-            try:
-                GenderField().value_validate(self.gender)
-            except:
-                self.erros.append('gender')
-
+        errors = validate_class_fields(self)
         if (self.first_name and self.last_name) is False or \
-                (self.email and self.phone) is False or \
+                    (self.email and self.phone) is False or \
                 (self.birthday and self.gender) is False:
-            self.erros.append('not_validate_pars')
-        return self.erros
+            errors['main_error_OnlineScoreRequest'] = 'not_validate_pars'
+        return errors
 
 
 class MethodRequest(Request):
@@ -218,29 +248,8 @@ class MethodRequest(Request):
     method = CharField(required=True, nullable=False)
 
     def values_validate(self):
-        if self.account not in empty_values:
-            try:
-                CharField().value_validate(self.account)
-            except:
-                self.erros.append('account')
-        try:
-            CharField().value_validate(self.login)
-        except:
-            self.erros.append('login')
-        try:
-            CharField().value_validate(self.token)
-        except:
-            self.erros.append('token')
-        try:
-            ArgumentsField().value_validate(self.arguments)
-        except:
-            self.erros.append('arguments')
-        try:
-            CharField().value_validate(self.method)
-        except:
-            self.erros.append('method')
-        return self.erros
-
+        errors = validate_class_fields(self)
+        return errors
 
 # @property
 def is_admin(self):
@@ -263,45 +272,49 @@ def parse_response_json(json_response):
     clients_interests_request = None
     errors = []
 
-    print(type(json_response))
-    if isinstance(json_response, str):
-        json_response = json.loads(method_request)
+    # if isinstance(json_response, str): ###?
+    #     json_response = json.loads(method_request)
 
-    method_request.login = json_response['body']['login']
-    method_request.account = json_response['body']['account']
-    method_request.token = json_response['body']['token']
-    method_request.method = json_response['body']['method']
-    if json_response['body']['arguments'] not in empty_values:
-        method_request.arguments = json_response['body']['arguments']
+    cur_request = Request(**json_response['body'])
+
+    if cur_request.arguments not in empty_values:
+        method_request.arguments = cur_request.arguments
         method_request_arg_keys = list(method_request.arguments.keys())
-
-        errors.append(method_request.values_validate())
+        errors.append(method_request.values_validate()) ## Validate
         online_score_keys = ['birthday', 'phone', 'first_name', 'last_name', 'gender', 'email']
         clients_interests_keys = ['date', 'client_ids']
 
         # fill online_score_request
         if method_request_arg_keys[0] in online_score_keys:
-            online_score_request = OnlineScoreRequest()
-            if 'birthday' in method_request_arg_keys: online_score_request.birthday = method_request.arguments[
-                'birthday']
-            if 'phone' in method_request_arg_keys: online_score_request.phone = method_request.arguments['phone']
-            if 'first_name' in method_request_arg_keys: online_score_request.first_name = method_request.arguments[
-                'first_name']
-            if 'last_name' in method_request_arg_keys: online_score_request.last_name = method_request.arguments[
-                'last_name']
-            if 'gender' in method_request_arg_keys: online_score_request.gender = method_request.arguments['gender']
-            if 'email' in method_request_arg_keys: online_score_request.email = method_request.arguments['email']
+            online_score_request = OnlineScoreRequest(**cur_request.arguments) ## birthday -- phone -- first_name -- last_name -- gender -- email
             errors.append(online_score_request.values_validate())
 
         # fill clients_interests_request
         if method_request_arg_keys[0] in clients_interests_keys:
-            clients_interests_request = ClientsInterestsRequest()
-            if 'date' in method_request_arg_keys: clients_interests_request.date = method_request.arguments['date']
-            if 'client_ids' in method_request_arg_keys: clients_interests_request.client_ids = method_request.arguments[
-                'client_ids']
-            errors.append(clients_interests_request.values_validate())
+            clients_interests_request = ClientsInterestsRequest(**cur_request.arguments) ## date -- client_ids
+            errors.append(clients_interests_request.values_validate()) ## Validate
 
     return method_request, online_score_request, clients_interests_request, errors
+
+
+def online_score_handler(online_score_request, user_login, store):
+
+    ##TODO
+    ## Пеереписать чтобы обрабатывало корректно поля.
+    if online_score_request not in empty_values:
+        if user_login == "admin":
+            return {"score": 42}, OK
+        result = scoring.get_score(store, online_score_request)
+        return {"score": result}, OK
+
+def clients_interests_handler(clients_interests_request, store):
+
+    ##TODO
+    ## Пеереписать чтобы обрабатывало корректно поля.
+    result_map_answer = {}
+    for x in clients_interests_request.client_ids:
+        result_map_answer[x] = scoring.get_interests(store, x)
+    return result_map_answer, OK
 
 
 def method_handler(request, ctx, store):  ## это и есть обработчик?
@@ -310,36 +323,17 @@ def method_handler(request, ctx, store):  ## это и есть обработч
     # if check_auth(method_req) is False:  ## Не понимаю куда бьется и почему не проходит авторизация
     #     return ERRORS['FORBIDDEN'], FORBIDDEN
 
-    if errors: ## Сделано криво т.к. 2 реквеста ((
-        print(str(errors))
-        if errors not in empty_values:
-            result_errors = []
-            for error_request in errors:
-                for x in error_request:
-                    result_errors.append(x)
-            return result_errors , INVALID_REQUEST
+    res_errors_dict = errors[0]
+    for _ in errors: res_errors_dict.update(_)
+
+    if res_errors_dict not in empty_values:
+        return [_ + errors[_] for _ in errors.keys()], INVALID_REQUEST
 
     if online_score_req not in empty_values:
-        if method_req.login == "admin":
-            return {"score": 42}, OK
-        result = scoring.get_score(
-                                    store,
-                                   # phone=online_score_req.phone,
-                                   # email=online_score_req.email,
-                                   # birthday=online_score_req.birthday,
-                                   # gender=online_score_req.gender,
-                                   # first_name=online_score_req.first_name,
-                                   # last_name=online_score_req.last_name
-                                    online_score_req
-                                   )
-        return {"score": result}, OK
+        return online_score_handler(online_score_req, method_req.login, store)
 
     if clients_interests_request not in empty_values:
-        result_map_answer = {}
-        for x in clients_interests_request.client_ids:
-            result_map_answer[x] = scoring.get_interests(store, x)
-        print(result_map_answer)
-        return result_map_answer, OK
+        return clients_interests_handler(clients_interests_request, store)
 
     if method_req in empty_values:
         return ERRORS['INVALID_REQUEST'], INVALID_REQUEST
