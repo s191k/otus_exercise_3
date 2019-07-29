@@ -40,14 +40,14 @@ GENDERS = {
 empty_values = ('', [], (), None, {})
 
 
-class Field(abc.ABC):
+class Field:
     """A descriptor that forbids negative values"""
-
-    # empty_values = ('', [], (), None)
-
     def __init__(self, required=False, nullable=False):
         self.required = required
         self.nullable = nullable
+
+    def __set_name__(self, owner, name):
+        self.name = name
 
     def validate(self, value):
         if self.required is True and value in empty_values:
@@ -55,82 +55,76 @@ class Field(abc.ABC):
         if self.nullable is True and value in empty_values:
             raise Exception('This value must be not empty')
 
-    # @abc.abstractmethod
-    def value_validate(self, value):
-        self.validate(value)
-        # pass
-
 
 class CharField(Field):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         # print('charfield', value)
         super().validate(value)
         if isinstance(value, str) is False:
             raise Exception('CharField must be str type')
-        return value
+        instance.__dict__[self.name] = value
 
 
 class ArgumentsField(Field):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         super().validate(value)
         if isinstance(value, dict) is False:
             raise Exception('ArgumentsField must be dict type')
-        return value
+        instance.__dict__[self.name] = value
 
 
 class EmailField(CharField):
-    def value_validate(self, value):
-        super().validate(value)
+    def __set__(self, instance, value):
+        # print('hereEmailEfield\n'*15)
         if isinstance(value, str) is False:
             raise Exception('EmailField must be str type')
         if value.count('@') != 1:
             raise Exception('wrong email address')
-        return value
+        instance.__dict__[self.name] = value
 
 
 class PhoneField(Field):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         super().validate(value)
         phone = str(value)
         if phone.startswith('7') is False or len(phone) != 11:
             raise Exception('wrong type of phone')
-        return value
-
+        instance.__dict__[self.name] = value
 
 class DateField(Field):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         super().validate(value)
         assert isinstance(value, str)
         try:
             datetime.datetime.strptime(value, '%d.%m.%Y')  ##need_cast to str?
         except Exception as ex:
             raise Exception('wrong date format')
-        return value
+        instance.__dict__[self.name] = value
 
 
 class BirthDayField(DateField):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         super().validate(value)
         try:
             birthday_date = datetime.datetime.strptime(value, '%d.%m.%Y')  ##double of parent method???
             assert (datetime.datetime.now() - birthday_date).days < 70 * 365
         except Exception as ex:
             raise Exception('wrong birthday_date format')
-        return value
+        instance.__dict__[self.name] = value
 
 
 class GenderField(Field):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         super().validate(value)
         try:
             assert value in [UNKNOWN, MALE, FEMALE]
         except Exception as ex:
             raise Exception('gender can be only 0 or 1 or 2')
-        return value
+        instance.__dict__[self.name] = value
 
 
 class ClientIDsField(Field):
-    def value_validate(self, value):
+    def __set__(self, instance, value):
         super().validate(value)
         try:
             assert isinstance(value, list)
@@ -138,53 +132,23 @@ class ClientIDsField(Field):
                 assert isinstance(x, int)
         except Exception as ex:
             raise Exception('Wrong type of client ids')
-        return value
-
-class DictAttrMetaclass(type):
-    """ Метаклса для добавления всех полей класса, в словарь only_attr"""
-    def __new__(cls, clsname, bases, dct):
-        only_attr = {}
-        for name, val in dct.items():
-            if not name.startswith('__'):
-                # print(name, val)
-                only_attr[name] = val
-
-        dct['only_attr'] = only_attr
-        return type.__new__(cls, clsname, bases, dct)
+        instance.__dict__[self.name] = value
 
 
-
-class Request(metaclass=DictAttrMetaclass):
-
+class Request():
     def __init__(self, **kwargs):
+        self.errors = {}
         for _ in kwargs:
-            self.__dict__[_] = kwargs[_]
-
-    @abc.abstractmethod ##? Можно ли использовать без прямого наследования от abc.ABC
-    def values_validate(self):
-        pass
-
-
-def validate_class_fields(class_object):
-    errors = {} ## Или в Request хранить ?
-    object_dict = class_object.__dict__
-    object_class_dict = class_object.__class__.__dict__
-    for cur_field in object_dict:
-        if cur_field == 'errors': pass
-        if cur_field not in empty_values:
             try:
-                object_class_dict[cur_field].value_validate(object_dict[cur_field])
-            except Exception as ex:
-                errors[cur_field] = "Wasn't validate"
-    return errors
+                setattr(self, _, kwargs[_]) ##setattr | getattr | get| set| setattribute | getattribute
+            except Exception:
+                self.errors[_] = "wasn't pass"
+
 
 class ClientsInterestsRequest(Request):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
-    def values_validate(self):
-        errors = validate_class_fields(self)
-        return errors
 
 class OnlineScoreRequest(Request):
     first_name = CharField(required=False, nullable=True)
@@ -194,14 +158,6 @@ class OnlineScoreRequest(Request):
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
 
-    def values_validate(self):
-        errors = validate_class_fields(self)
-        if (self.first_name and self.last_name) is False or \
-                    (self.email and self.phone) is False or \
-                (self.birthday and self.gender) is False:
-            errors['main_error_OnlineScoreRequest'] = 'not_validate_pars'
-        return errors
-
 
 class MethodRequest(Request):
     account = CharField(required=False, nullable=True)
@@ -210,11 +166,7 @@ class MethodRequest(Request):
     arguments = ArgumentsField(required=True, nullable=True)
     method = CharField(required=True, nullable=False)
 
-    def values_validate(self):
-        errors = validate_class_fields(self)
-        return errors
 
-# @property
 def is_admin(self):
     return self.login == ADMIN_LOGIN
 
@@ -230,40 +182,34 @@ def check_auth(request):  ### Распаршенный Method_request
 
 
 def parse_response_json(json_response):
-    method_request = MethodRequest()
     online_score_request = None
     clients_interests_request = None
-    errors = []
+    errors = {}
 
-    # if isinstance(json_response, str): ###?
-    #     json_response = json.loads(method_request)
+    json_response_body = json_response['body']
+    if isinstance(json_response_body, str):
+        json_response_body = json.loads(json_response_body)
 
-    cur_request = Request(**json_response['body'])
+    method_request = MethodRequest(**json_response_body)
+    errors.update(method_request.errors)
 
-    if cur_request.arguments not in empty_values:
-        method_request.arguments = cur_request.arguments
+    if method_request.arguments and method_request.arguments not in empty_values:
         method_request_arg_keys = list(method_request.arguments.keys())
-        errors.append(method_request.values_validate()) ## Validate
         online_score_keys = ['birthday', 'phone', 'first_name', 'last_name', 'gender', 'email']
         clients_interests_keys = ['date', 'client_ids']
 
-        # fill online_score_request
         if method_request_arg_keys[0] in online_score_keys:
-            online_score_request = OnlineScoreRequest(**cur_request.arguments) ## birthday -- phone -- first_name -- last_name -- gender -- email
-            errors.append(online_score_request.values_validate())
+            online_score_request = OnlineScoreRequest(**method_request.arguments) ## birthday -- phone -- first_name -- last_name -- gender -- email
+            errors.update(online_score_request.errors)
 
-        # fill clients_interests_request
         if method_request_arg_keys[0] in clients_interests_keys:
-            clients_interests_request = ClientsInterestsRequest(**cur_request.arguments) ## date -- client_ids
-            errors.append(clients_interests_request.values_validate()) ## Validate
+            clients_interests_request = ClientsInterestsRequest(**method_request.arguments) ## date -- client_ids
+            errors.update(clients_interests_request.errors)
 
     return method_request, online_score_request, clients_interests_request, errors
 
 
 def online_score_handler(online_score_request, user_login, store):
-
-    ##TODO
-    ## Пеереписать чтобы обрабатывало корректно поля.
     if online_score_request not in empty_values:
         if user_login == "admin":
             return {"score": 42}, OK
@@ -271,9 +217,6 @@ def online_score_handler(online_score_request, user_login, store):
         return {"score": result}, OK
 
 def clients_interests_handler(clients_interests_request, store):
-
-    ##TODO
-    ## Пеереписать чтобы обрабатывало корректно поля.
     result_map_answer = {}
     for x in clients_interests_request.client_ids:
         result_map_answer[x] = scoring.get_interests(store, x)
@@ -281,16 +224,12 @@ def clients_interests_handler(clients_interests_request, store):
 
 
 def method_handler(request, ctx, store):  ## это и есть обработчик?
-
     method_req, online_score_req, clients_interests_request, errors = parse_response_json(request)
     # if check_auth(method_req) is False:  ## Не понимаю куда бьется и почему не проходит авторизация
     #     return ERRORS['FORBIDDEN'], FORBIDDEN
 
-    res_errors_dict = errors[0]
-    for _ in errors: res_errors_dict.update(_)
-
-    if res_errors_dict not in empty_values:
-        return [_ + errors[_] for _ in errors.keys()], INVALID_REQUEST
+    if errors not in empty_values:
+        return [_ + ' ' + errors[_] for _ in errors.keys()], INVALID_REQUEST
 
     if online_score_req not in empty_values:
         return online_score_handler(online_score_req, method_req.login, store)
