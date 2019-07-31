@@ -1,23 +1,30 @@
+import json
+import os
 import unittest
 import api
-from api import ClientIDsField, DateField, CharField, PhoneField, GenderField, BirthDayField, EmailField, ArgumentsField
 
 class IntegrationTest(unittest.TestCase):
+
+    def _fixture_load_helper(self,fixture_file_name):
+        with open(os.path.join(os.path.abspath(os.path.curdir) + "\\fixtures\\" + fixture_file_name), "r") as read_file:
+            json_result_dict = json.load(read_file)
+        return json_result_dict
+
     def test_parse_response_json(self):
-        method_request, online_score_request, clients_interests_request, errors = api.parse_response_json(
-            {'body': {'account': 'horns&hoofs', 'login': 'h&f', 'method': 'online_score',
-             'token': '55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af3',
-             'arguments': {'phone': '79175002040', 'email': 'stupnikov@otus.ru', 'first_name': '11',
-             'last_name': 'Ступников', 'birthday': '01.01.1990', 'gender': 1}}})
+        method_request, online_score_request,\
+        clients_interests_request, errors = api.parse_response_json(self._fixture_load_helper('api_request_good.json'))
         self.assertTrue(method_request is not None)
         self.assertTrue(online_score_request is not None)
         self.assertTrue(clients_interests_request is None)
         self.assertEqual({},errors)
 
     def test_method_handler_good(self):
-        result_good = api.method_handler({'body': {'account': 'horns&hoofs', 'login': 'h&f', 'method': 'online_score', 'token': '55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af3', 'arguments': {'phone': '79175002040', 'email': 'stupnikov@otus.ru', 'first_name': '11', 'last_name': 'Ступников', 'birthday': '01.01.1990', 'gender': 1}}} ,{'request_id': '8b1aac327f4f4aa59d895f0a67818fee'}, None)
+        json_dict = self._fixture_load_helper('api_request_good.json')
+        result_good = api.method_handler(json_dict, {'request_id': '8b1aac327f4f4aa59d895f0a67818fee'}, None)
         self.assertEqual(({'score': 5.0}, 200), result_good)
 
     def test_method_handler_bad(self):
-        result_bad = api.method_handler({'body': {'account': 'horns&hoofs', 'login': 'h&f', 'method': 'online_score', 'token': '55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af3', 'arguments': {'phone': '79175002040', 'email': 'stupnikov@@@otus.ru', 'first_name': 123, 'last_name': 123, 'birthday': '01.01.1990', 'gender': 1}}} ,{'request_id': '8b1aac327f4f4aa59d895f0a67818fee'}, None)
+        json_dict = self._fixture_load_helper('api_request_bad.json')
+        result_bad = api.method_handler(json_dict ,{'request_id': '8b1aac327f4f4aa59d895f0a67818fee'}, None)
         self.assertEqual((["email wasn't pass", "first_name wasn't pass", "last_name wasn't pass"], 422), result_bad)
+

@@ -1,13 +1,9 @@
-import abc
-import collections
 import json
 import datetime
 import logging
 import hashlib
-import re
 import uuid
 from optparse import OptionParser
-# from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import scoring
@@ -55,10 +51,20 @@ class Field:
         if self.nullable is True and value in empty_values:
             raise Exception('This value must be not empty')
 
+    def __set__(self, instance, value):
+        instance_dict = instance.__class__.__dict__
+        for key in instance_dict:
+            if instance_dict[key] == self:
+                cur_argumnet_name = key
+        try:
+            self.validate(value)
+            self.validate_value(instance,value)
+        except Exception as ex:
+            instance.__dict__['errors'][cur_argumnet_name] = "wasn't pass" ## ass на имя
+
 
 class CharField(Field):
-    def __set__(self, instance, value):
-        # print('charfield', value)
+    def validate_value(self, instance, value):
         super().validate(value)
         if isinstance(value, str) is False:
             raise Exception('CharField must be str type')
@@ -66,7 +72,7 @@ class CharField(Field):
 
 
 class ArgumentsField(Field):
-    def __set__(self, instance, value):
+    def validate_value(self, instance, value):
         super().validate(value)
         if isinstance(value, dict) is False:
             raise Exception('ArgumentsField must be dict type')
@@ -74,8 +80,7 @@ class ArgumentsField(Field):
 
 
 class EmailField(CharField):
-    def __set__(self, instance, value):
-        # print('hereEmailEfield\n'*15)
+    def validate_value(self, instance, value):
         if isinstance(value, str) is False:
             raise Exception('EmailField must be str type')
         if value.count('@') != 1:
@@ -84,7 +89,7 @@ class EmailField(CharField):
 
 
 class PhoneField(Field):
-    def __set__(self, instance, value):
+    def validate_value(self, instance, value):
         super().validate(value)
         phone = str(value)
         if phone.startswith('7') is False or len(phone) != 11:
@@ -92,7 +97,7 @@ class PhoneField(Field):
         instance.__dict__[self.name] = value
 
 class DateField(Field):
-    def __set__(self, instance, value):
+    def validate_value(self, instance, value):
         super().validate(value)
         assert isinstance(value, str)
         try:
@@ -103,7 +108,7 @@ class DateField(Field):
 
 
 class BirthDayField(DateField):
-    def __set__(self, instance, value):
+    def validate_value(self, instance, value):
         super().validate(value)
         try:
             birthday_date = datetime.datetime.strptime(value, '%d.%m.%Y')  ##double of parent method???
@@ -114,7 +119,7 @@ class BirthDayField(DateField):
 
 
 class GenderField(Field):
-    def __set__(self, instance, value):
+    def validate_value(self, instance, value):
         super().validate(value)
         try:
             assert value in [UNKNOWN, MALE, FEMALE]
@@ -124,7 +129,7 @@ class GenderField(Field):
 
 
 class ClientIDsField(Field):
-    def __set__(self, instance, value):
+    def validate_value(self, instance, value):
         super().validate(value)
         try:
             assert isinstance(value, list)
@@ -138,11 +143,17 @@ class ClientIDsField(Field):
 class Request():
     def __init__(self, **kwargs):
         self.errors = {}
-        for _ in kwargs:
+
+        class_fields = []
+        for cur_class_feild in self.__class__.__dict__:
+            if not cur_class_feild.startswith('__'):
+                class_fields.append(cur_class_feild)
+
+        for cur_key in class_fields:
             try:
-                setattr(self, _, kwargs[_]) ##setattr | getattr | get| set| setattribute | getattribute
+                setattr(self, cur_key, kwargs[cur_key]) ##setattr | getattr | get| set| setattribute | getattribute
             except Exception:
-                self.errors[_] = "wasn't pass"
+                self.errors[cur_key] = "wasn't pass"
 
 
 class ClientsInterestsRequest(Request):
@@ -182,16 +193,14 @@ def check_auth(request):  ### Распаршенный Method_request
 
 
 def parse_response_json(json_response):
-    online_score_request = None
-    clients_interests_request = None
     errors = {}
-
+    result_dict = {}
     json_response_body = json_response['body']
     if isinstance(json_response_body, str):
         json_response_body = json.loads(json_response_body)
-
     method_request = MethodRequest(**json_response_body)
     errors.update(method_request.errors)
+    result_dict['method_request'] = method_request
 
     if method_request.arguments and method_request.arguments not in empty_values:
         method_request_arg_keys = list(method_request.arguments.keys())
@@ -201,12 +210,15 @@ def parse_response_json(json_response):
         if method_request_arg_keys[0] in online_score_keys:
             online_score_request = OnlineScoreRequest(**method_request.arguments) ## birthday -- phone -- first_name -- last_name -- gender -- email
             errors.update(online_score_request.errors)
+            result_dict['online_score_request'] = online_score_request
 
         if method_request_arg_keys[0] in clients_interests_keys:
             clients_interests_request = ClientsInterestsRequest(**method_request.arguments) ## date -- client_ids
             errors.update(clients_interests_request.errors)
+            result_dict['clients_interests_request'] = clients_interests_request
 
-    return method_request, online_score_request, clients_interests_request, errors
+    result_dict['errors'] = errors
+    return result_dict
 
 
 def online_score_handler(online_score_request, user_login, store):
@@ -224,21 +236,20 @@ def clients_interests_handler(clients_interests_request, store):
 
 
 def method_handler(request, ctx, store):  ## это и есть обработчик?
-    method_req, online_score_req, clients_interests_request, errors = parse_response_json(request)
+    response_dict = parse_response_json(request)
+    response_dict_keys = response_dict.keys()
     # if check_auth(method_req) is False:  ## Не понимаю куда бьется и почему не проходит авторизация
     #     return ERRORS['FORBIDDEN'], FORBIDDEN
 
-    if errors not in empty_values:
-        return [_ + ' ' + errors[_] for _ in errors.keys()], INVALID_REQUEST
-
-    if online_score_req not in empty_values:
-        return online_score_handler(online_score_req, method_req.login, store)
-
-    if clients_interests_request not in empty_values:
-        return clients_interests_handler(clients_interests_request, store)
-
-    if method_req in empty_values:
-        return ERRORS['INVALID_REQUEST'], INVALID_REQUEST
+    for element in response_dict_keys:
+        if element == 'errors' and response_dict['errors'] not in empty_values:
+            return [_ + ' ' + response_dict['errors'][_] for _ in response_dict['errors'].keys()], INVALID_REQUEST
+        elif element == 'online_score_request' and response_dict['online_score_request'] not in empty_values:
+            return online_score_handler(response_dict['online_score_request'], response_dict['method_request']['login'], store)
+        elif element == 'clients_interests_request' and response_dict['clients_interests_request'] not in empty_values:
+            return clients_interests_handler(response_dict['clients_interests_request'], store)
+        elif element == 'method_request' in empty_values:
+            return ERRORS['INVALID_REQUEST'], INVALID_REQUEST
 
 
 class MainHTTPHandler(BaseHTTPRequestHandler):
@@ -246,7 +257,6 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         "method": method_handler
     }
     store = None
-    print(str(method_handler))
 
     def get_request_id(self, headers):
         return headers.get('HTTP_X_REQUEST_ID', uuid.uuid4().hex)
