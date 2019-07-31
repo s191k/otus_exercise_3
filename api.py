@@ -60,8 +60,7 @@ class Field:
             self.validate(value)
             self.validate_value(instance,value)
         except Exception as ex:
-            instance.__dict__['errors'][cur_argumnet_name] = "wasn't pass" ## ass на имя
-
+            instance.__dict__['errors'][cur_argumnet_name] = str(ex)
 
 class CharField(Field):
     def validate_value(self, instance, value):
@@ -241,10 +240,13 @@ def method_handler(request, ctx, store):  ## это и есть обработч
     # if check_auth(method_req) is False:  ## Не понимаю куда бьется и почему не проходит авторизация
     #     return ERRORS['FORBIDDEN'], FORBIDDEN
 
+    #Начинать проверку с errors
+    if 'errors' in response_dict_keys:
+        if response_dict['errors'] not in empty_values:
+            return [_ + ' :: ' + response_dict['errors'][_] for _ in response_dict['errors'].keys()], INVALID_REQUEST
+
     for element in response_dict_keys:
-        if element == 'errors' and response_dict['errors'] not in empty_values:
-            return [_ + ' ' + response_dict['errors'][_] for _ in response_dict['errors'].keys()], INVALID_REQUEST
-        elif element == 'online_score_request' and response_dict['online_score_request'] not in empty_values:
+        if element == 'online_score_request' and response_dict['online_score_request'] not in empty_values:
             return online_score_handler(response_dict['online_score_request'], response_dict['method_request']['login'], store)
         elif element == 'clients_interests_request' and response_dict['clients_interests_request'] not in empty_values:
             return clients_interests_handler(response_dict['clients_interests_request'], store)
