@@ -1,32 +1,59 @@
+import functools
 import unittest
 
 import api
 from api import ClientIDsField, DateField, CharField, PhoneField, GenderField, BirthDayField, EmailField, ArgumentsField
 
+def cases(cases):
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args):
+            for c in cases:
+                new_args = args + (c if isinstance(c, tuple) else (c,))
+                f(*new_args)
+        return wrapper
+    return decorator
+
 class ClientsInterestsRequestTests(unittest.TestCase):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
-    @unittest.expectedFailure
-    def test_client_ids_filed_bad(self):
-        self.client_ids = '123'
+    @cases({"param": "123"})
+    def test_client_ids_filed_bad(self, param):
+        with self.assertRaises(Exception):
+            self.client_ids = param
 
-    @unittest.expectedFailure
-    def test_client_ids_filed_empty(self):
-        self.client_ids = '123'
+    @cases({"param": ""})
+    def test_client_ids_filed_empty(self, param):
+        with self.assertRaises(Exception):
+            self.client_ids = param
 
-    def test_client_ids_filed_good(self):
-        with self.assertRaises(AssertionError) as ex:
-            self.client_ids = ['1', '2', '3']
-            print(ex)
-        print('end')
+    @cases({"param": [1, 2, 3]})
+    def test_client_ids_filed_good(self, param):
+        with self.assertRaises(Exception):
+            self.client_ids = param
 
-    @unittest.expectedFailure
-    def test_date_field_field_bad(self):
-        self.date = '2000.01.01'
+    ##should delete ?
+    @cases([{"param": "123"},
+            {"param": ""},
+            {"param": [1, 2, 3]}])
+    def test_client_ids_field(self, param):
+        with self.assertRaises(Exception):
+            print(param)
 
-    def test_date_field_field_good(self):
-        self.date = '01.01.2000'
+            self.client_ids = param
+            print(param)
+            # print(ex)
+
+
+    @cases({"param": '2000.01.01'})
+    def test_date_field_field_bad(self, param):
+        with self.assertRaises(Exception):
+            self.date = param
+
+    @cases({"param": '01.01.2000'})
+    def test_date_field_field_good(self, param):
+        self.date = param
 
 class OnlineScoreRequest(unittest.TestCase):
     first_name = CharField(required=False, nullable=True)
@@ -37,25 +64,31 @@ class OnlineScoreRequest(unittest.TestCase):
     gender = GenderField(required=True, nullable=True)
 
     @unittest.expectedFailure
+    @cases({"param": 123})
     def test_first_name_field_bad(self):
         self.first_name = 123
 
-    def test_first_name_field_good(self):
-        self.first_name = 'tests'
+    @cases({"param": 'tests'})
+    def test_first_name_field_good(self, param):
+        self.first_name = param
 
     @unittest.expectedFailure
-    def test_last_name_field_bad(self):
-        self.last_name = 123
+    @cases({"param": 123})
+    def test_last_name_field_bad(self, param):
+        self.last_name = param
 
-    def test_last_name_field_good(self):
-        self.last_name = 'tests'
+    @cases({"param": 'tests'})
+    def test_last_name_field_good(self, param):
+        self.last_name = param
 
     @unittest.expectedFailure
-    def test_email_field_bad(self):
-        self.email = 'tests@t@mail.ru'
+    @cases({"param": 'tests@t@mail.ru'})
+    def test_email_field_bad(self, param):
+        self.email = param
 
-    def test_email_field_good(self):
-        self.email = 'tests@tmail.ru'
+    @cases({"param": 'tests@tmail.ru'})
+    def test_email_field_good(self, param):
+        self.email = param
 
     @unittest.expectedFailure
     def test_phone_field_bad(self):
@@ -124,23 +157,6 @@ class MethodRequest(unittest.TestCase):
 
     def test_method_field_good(self):
         self.token = '123'
-
-    # def test_parse_response_json(self):
-    #     method_request, online_score_request, clients_interests_request, errors = api.parse_response_json(
-    #         {'body': {'account': 'horns&hoofs', 'login': 'h&f', 'method': 'online_score',
-    #          'token': '55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af3',
-    #          'arguments': {'phone': '79175002040', 'email': 'stupnikov@otus.ru', 'first_name': '11',
-    #          'last_name': 'Ступников', 'birthday': '01.01.1990', 'gender': 1}}})
-    #     self.assertTrue(method_request is not None)
-    #     self.assertTrue(online_score_request is not None)
-    #     self.assertTrue(clients_interests_request is None)
-    #     self.assertEqual([],errors)
-    #
-    # def test_method_handler(self):
-    #     result_good = api.method_handler({'body': {'account': 'horns&hoofs', 'login': 'h&f', 'method': 'online_score', 'token': '55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af3', 'arguments': {'phone': '79175002040', 'email': 'stupnikov@otus.ru', 'first_name': '11', 'last_name': 'Ступников', 'birthday': '01.01.1990', 'gender': 1}}} ,{'request_id': '8b1aac327f4f4aa59d895f0a67818fee'}, None)
-    #     self.assertEqual(({'score': 5.0}, 200), result_good)
-    #     result_bad = api.method_handler({'body': {'account': 'horns&hoofs', 'login': 'h&f', 'method': 'online_score', 'token': '55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af3', 'arguments': {'phone': '79175002040', 'email': 'stupnikov@@@otus.ru', 'first_name': 123, 'last_name': 123, 'birthday': '01.01.1990', 'gender': 1}}} ,{'request_id': '8b1aac327f4f4aa59d895f0a67818fee'}, None)
-    #     self.assertEqual((['Inccorect email.'], 422), result_bad)
 
 if __name__ == '__main__':
     unittest.main()

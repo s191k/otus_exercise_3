@@ -95,6 +95,7 @@ class PhoneField(Field):
             raise Exception('wrong type of phone')
         instance.__dict__[self.name] = value
 
+
 class DateField(Field):
     def validate_value(self, instance, value):
         super().validate(value)
@@ -139,7 +140,7 @@ class ClientIDsField(Field):
         instance.__dict__[self.name] = value
 
 
-class Request():
+class Request:
     def __init__(self, **kwargs):
         self.errors = {}
 
